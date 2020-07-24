@@ -1,5 +1,9 @@
-"""quick and dirty script to grab logs off contrail components 
-and tar them up for quick retrieval"""
+"""
+quick and dirty script to grab logs off contrail components 
+and tar them up for quick retrieval.
+
+Use at your own risk
+"""
 
 import argparse
 import uuid
@@ -52,8 +56,10 @@ def get_remote_file(remote_ip, file_location, username, is_dir, destination):
     """grab the text contents of a file on a remote system via SCP."""
     try:
         if is_dir:
+            print("getting remote logs in '{}' ".format(file_location))
             command = ['scp', '-r', '{}@{}:{}'.format(username, remote_ip, file_location), destination]
         else:
+            print("getting remote log file '{}' ".format(file_location))
             command = ['scp', '{}@{}:{}'.format(username, remote_ip, file_location), destination]
         pipes = (subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
         std_out, std_err = pipes.communicate(timeout=20)           
@@ -66,16 +72,22 @@ def get_remote_file(remote_ip, file_location, username, is_dir, destination):
 
 
 
-def iterate_devices(devices, logs, username):
+def iterate_devices(devices, logs, username, hide_data):
     run_id = str(uuid.uuid1())
-    os.mkdir('./tmp/' + run_id)
     for device in devices:
+        if hide_data:
+            dev_name = 'X.X.' + '.'.join(device.split('.')[2:4])
+        else:
+            dev_name = device
+        print("SCPing logs from '{}' ".format(device))
+        file_path = "./tmp/{}/{}".format(run_id, dev_name) 
+        pathlib.Path(file_path).mkdir(parents=True, exist_ok=True)
         for log_file in logs:
             if log_file[-1] == '/':
                 is_dir = True
             else:
                 is_dir = False
-            get_remote_file(device, log_file, username, is_dir, './tmp/' + run_id)
+            get_remote_file(device, log_file, username, is_dir, file_path)
     return run_id
 
 
@@ -110,36 +122,60 @@ def strip_pwds(dirty_text, host_re, dom_re):
 
 
 
-def remove_passwords(run_id, host_re, dom_re):
+def remove_confidential(run_id, host_re, dom_re):
     working_dir = './tmp/' + run_id
     for root, _, files in os.walk(working_dir):
         for file_name in files:
             file_path = os.path.join(root, file_name)
             if re.match(r".+\.log\.[0-9]{1,2}\.gz", file_name):
                 dirty_text = read_zip(file_path)
-                print('zip ' + file_path)
+                print("removing confidential data from zip file '{}'".format(file_path))
                 file_name = file_name[:-3]
             elif re.match(r".+\.log[.0-9]{0,3}", file_name):
-                print('log ' + file_path)
+                print("removing confidential data from text file '{}'".format(file_path))
                 dirty_text = read_log(file_path)
             else:
                 print("unsupported file: '{}' ignoring...".format(file_path))
             clean_text = strip_pwds(dirty_text, host_re, dom_re)
             file_path = '/'.join(file_path.split('/')[2:-1])
-            print(file_path)
             pathlib.Path(file_path).mkdir(parents=True, exist_ok=True)
             write_log(clean_text, file_path + '/' + file_name)
     shutil.rmtree(working_dir)
 
 
 def get_container_names(host, username):
-    command = ['ssh', "{}@{} sudo docker ps -f \\{\\{.Names\\}\\}".format(username, host)]
+    command = ['ssh', "{}@{}".format(username, host),  r"sudo docker ps --format {{.Names}}"]
     pipes = (subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
     std_out, std_err = pipes.communicate(timeout=20)
-    containers = std_out.splitlines()
+    containers = std_out.decode('utf-8').splitlines()
     return containers     
 
+
+def get_container_log(host, username, container):
+    command = ['ssh', "{}@{}".format(username, host), "sudo cat", r"'$(sudo docker inspect -f {{.LogPath}})'"]
+    pipes = (subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
+    std_out, std_err = pipes.communicate(timeout=20)
+    return std_out.decode('utf-8')
+
+
+def iterate_containers(devices, username, run_id, hide_data):
+    for host in devices:
+        if hide_data:
+            dev_name = 'X.X.' + '.'.join(host.split('.')[2:4])
+        else:
+            dev_name = host
+        print("connecting to '{}' to get container logs".format(host))
+        container_dir = "./tmp/{}/{}/container-logs".format(run_id, dev_name)
+        pathlib.Path(container_dir).mkdir(parents=True, exist_ok=True)
+        container_names = get_container_names(host, username)
+        for container in container_names:
+            container_log = get_container_log(host, username, container)
+            print("getting logs for container '{}'".format(container))
+            write_log(container_log, container_dir + '/' + container + '.json.log')
+
+
 def final_zip(run_id, component):
+    print("cleaning up temporary files and zipping up to '{}-{}-logs.tgz'".format(component, run_id))
     with tarfile.open(component + '-' + run_id + '-logs.tgz', 'w:gz') as tar:
         tar.add(run_id, os.path.basename(run_id)) 
     shutil.rmtree(run_id)
@@ -159,11 +195,11 @@ def main():
     elif args['ips_file']:
         unit_ips = read_config(args['ips_file'])
         devices = unit_ips[component]
-    print(devices)
-    print(log_files)
-    run_id = iterate_devices(devices, log_files, args['username'])
+    run_id = iterate_devices(devices, log_files, args['username'], args['hide_data'])
+    if config['components'][component]['containers']:
+        iterate_containers(devices, args['username'], run_id,args['hide_data'])
     if args['hide_data']:
-        remove_passwords(run_id,
+        remove_confidential(run_id,
                          config['filter_strings']['hostname_string'],
                          config['filter_strings']['domain_string']
                         )
