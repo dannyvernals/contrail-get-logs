@@ -1,0 +1,36 @@
+# If logs are directories please end the string with / as this is a 
+# simple way to differentiate between files and dirs.
+# It reduces the commands required to be executed on the remote system
+
+components:
+  heat:
+    containers: false
+    logs:
+    - /var/log/heat/
+  contrail-haproxy:
+    containers: false
+    logs:
+    - /var/log/haproxy.log
+  neutron:
+    containers: false
+    logs:
+    - /var/log/neutron/
+  contrail-agent:
+    containers: true
+    logs:
+    - /var/log/contrail/
+  contrail-controller:
+    containers: true
+    logs:
+    - /var/log/contrail/
+  contrail-analyticsdb:
+    containers: true
+    logs:
+    - /var/log/contrail/
+  contrail-analytics:
+    containers: true
+    logs:
+    - /var/log/contrail/
+filter_strings:
+  hostname_string: 'juju'
+  domain_string: 'maas'
