@@ -1,7 +1,3 @@
-# If logs are directories please end the string with / as this is a 
-# simple way to differentiate between files and dirs.
-# It reduces the commands required to be executed on the remote system
-
 components:
   heat:
     containers: false
@@ -31,6 +27,10 @@ components:
     containers: true
     logs:
     - /var/log/contrail/
+  appformix:
+    containers: true
+    logs:
+    - /var/log/appformix/
 filter_strings:
   hostname_string: 'juju'
   domain_string: 'maas'

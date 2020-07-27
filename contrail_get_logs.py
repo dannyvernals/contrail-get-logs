@@ -35,10 +35,10 @@ def cli_grab():
                                             " and strings to hide if using '-h' option")
     parser.add_argument("component", help="Name of component: control, analytics, analyticsdb, "
                                           "vrouter, haproxy, heat, neutron, appformix")
-    parser.add_argument("-i", "--device-ip", help="get the logs from the specified IP ")
-    parser.add_argument("-f", "---ips-file", help="lookup component in the IPs file and grab logs "
+    parser.add_argument("-d", "--device-ip", help="get the logs from the specified IP ")
+    parser.add_argument("-i", "---ips-file", help="lookup component in the IPs file and grab logs "
                                                   "from all the IPs listed")
-    parser.add_argument("-d", "--hide-data", action="store_true", help="attempt to obfuscate "
+    parser.add_argument("-z", "--hide-data", action="store_true", help="attempt to obfuscate "
                                                                        "things like IPs, MACs & "
                                                                        "hostnames")
     parser.add_argument("-u", "--username", default='ubuntu', help="username, default= 'ubuntu' ")
@@ -52,23 +52,30 @@ def read_config(file_path):
     return file_contents
 
 
-def get_remote_file(remote_ip, file_location, username, is_dir, destination):
-    """grab the text contents of a file on a remote system via SCP."""
-    try:
-        if is_dir:
-            print("getting remote logs in '{}' ".format(file_location))
-            command = ['scp', '-r', '{}@{}:{}'.format(username, remote_ip, file_location), destination]
-        else:
-            print("getting remote log file '{}' ".format(file_location))
-            command = ['scp', '{}@{}:{}'.format(username, remote_ip, file_location), destination]
-        pipes = (subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
-        std_out, std_err = pipes.communicate(timeout=20)           
-    except subprocess.TimeoutExpired:
-        print("No answer from '{}', skipping.".format(remote_ip))
+def get_remote_file(remote_ip, file_location, username, destination):
+    """grab the text contents of a file or directory on a remote system.
+    it's dirty using sudo tar first to account for logs files with root only perms."""
+    tarname = '_'.join(file_location.split('/')) + '.tgz'
+    print("zipping '{}' up to /var/tmp/{} on {}".format(file_location, tarname, remote_ip))
+    ssh_command = ['ssh', '{}@{}'.format(username, remote_ip),
+                    'sudo tar -zcf /var/tmp/{} {}'.format(tarname, file_location)
+                    ] 
+    pipes = (subprocess.Popen(ssh_command, stderr=subprocess.PIPE))
+    _, std_err = pipes.communicate(timeout=20)
     if pipes.returncode != 0:
-        if b'No such file or directory' in std_err:
-            print("Remote file or dir doesn't exist: '{}'".format(file_location))
         raise Exception(std_err.strip())
+    print("grabbing /var/tmp/{}".format(tarname))
+    scp_command = ['scp', '{}@{}:{}'.format(username, remote_ip, 
+                                            '/var/tmp/{}'.format(tarname)), destination
+                  ]
+    pipes = (subprocess.Popen(scp_command, stderr=subprocess.PIPE))
+    _, std_err = pipes.communicate(timeout=20)           
+    if pipes.returncode != 0:
+        raise Exception(std_err.strip()) 
+    # Files are extracted locally to simplfy optional extra file processing later
+    with tarfile.open('{}/{}'.format(destination, tarname)) as tar:
+        tar.extractall(destination)
+    os.remove('{}/{}'.format(destination, tarname))
 
 
 
@@ -79,15 +86,10 @@ def iterate_devices(devices, logs, username, hide_data):
             dev_name = 'X.X.' + '.'.join(device.split('.')[2:4])
         else:
             dev_name = device
-        print("SCPing logs from '{}' ".format(device))
         file_path = "./tmp/{}/{}".format(run_id, dev_name) 
         pathlib.Path(file_path).mkdir(parents=True, exist_ok=True)
         for log_file in logs:
-            if log_file[-1] == '/':
-                is_dir = True
-            else:
-                is_dir = False
-            get_remote_file(device, log_file, username, is_dir, file_path)
+            get_remote_file(device, log_file, username, file_path)
     return run_id
 
 
@@ -108,7 +110,7 @@ def write_log(file_contents, file_path):
         file_handle.write(file_contents)
 
 
-def strip_pwds(dirty_text, host_re, dom_re):
+def strip_strings(dirty_text, host_re, dom_re):
     dirty_text = dirty_text.decode('utf-8')
     match_host = re.compile(host_re)
     match_domain = re.compile(dom_re)
@@ -136,7 +138,8 @@ def remove_confidential(run_id, host_re, dom_re):
                 dirty_text = read_log(file_path)
             else:
                 print("unsupported file: '{}' ignoring...".format(file_path))
-            clean_text = strip_pwds(dirty_text, host_re, dom_re)
+                continue
+            clean_text = strip_strings(dirty_text, host_re, dom_re)
             file_path = '/'.join(file_path.split('/')[2:-1])
             pathlib.Path(file_path).mkdir(parents=True, exist_ok=True)
             write_log(clean_text, file_path + '/' + file_name)
@@ -147,14 +150,19 @@ def get_container_names(host, username):
     command = ['ssh', "{}@{}".format(username, host),  r"sudo docker ps --format {{.Names}}"]
     pipes = (subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
     std_out, std_err = pipes.communicate(timeout=20)
+    if pipes.returncode != 0:
+        raise Exception(std_err.strip())
     containers = std_out.decode('utf-8').splitlines()
     return containers     
 
 
 def get_container_log(host, username, container):
-    command = ['ssh', "{}@{}".format(username, host), "sudo cat", r"'$(sudo docker inspect -f {{.LogPath}})'"]
+    sub_command = "sudo cat $(sudo docker inspect " + container + r" -f {{.LogPath}})"
+    command = ['ssh', "{}@{}".format(username, host), sub_command]
     pipes = (subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
     std_out, std_err = pipes.communicate(timeout=20)
+    if pipes.returncode != 0:
+        raise Exception(std_err)
     return std_out.decode('utf-8')
 
 
@@ -169,8 +177,8 @@ def iterate_containers(devices, username, run_id, hide_data):
         pathlib.Path(container_dir).mkdir(parents=True, exist_ok=True)
         container_names = get_container_names(host, username)
         for container in container_names:
-            container_log = get_container_log(host, username, container)
             print("getting logs for container '{}'".format(container))
+            container_log = get_container_log(host, username, container)
             write_log(container_log, container_dir + '/' + container + '.json.log')
 
 
@@ -187,6 +195,8 @@ def main():
     config = read_config(args['config_file'])
     component = CLI_MAP[args['component']]
     log_files = config['components'][component]['logs']
+    if not os.path.exists('./tmp'):
+        os.mkdir('./tmp')
     if args['device_ip'] and args['ips_file']:
         print("both device IP and IPs file specified.  Please only use one")
         exit()
@@ -197,7 +207,7 @@ def main():
         devices = unit_ips[component]
     run_id = iterate_devices(devices, log_files, args['username'], args['hide_data'])
     if config['components'][component]['containers']:
-        iterate_containers(devices, args['username'], run_id,args['hide_data'])
+        iterate_containers(devices, args['username'], run_id, args['hide_data'])
     if args['hide_data']:
         remove_confidential(run_id,
                          config['filter_strings']['hostname_string'],
