@@ -1,6 +1,7 @@
 # Contrail Get Logs
 Quick and fairly simple script to grab log files from Contrail Components.  
-There are more advanced tools around, such as: https://github.com/Juniper/contrail-controller/blob/master/src/config/utils/vrouter_agent_debug_tool.py
+There are more advanced tools around, such as:  
+https://github.com/Juniper/contrail-controller/blob/master/src/config/utils/vrouter_agent_debug_tool.py
 
 However they are not always suitable.  For example, the above only gets logs off vrouters and Contrail Controllers not components such as Analytics etc.  It also requires HTTP connectivity to Introspect endpoints which is not always available.
 
