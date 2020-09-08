@@ -2,7 +2,7 @@
 quick and dirty script to grab logs off contrail components
 and tar them up for quick retrieval.
 
-Use at your own risk
+Use at your own risk.
 """
 
 import argparse
