@@ -30,7 +30,7 @@ CLI_MAP = {
 
 def cli_grab():
     """take stuff from cli, output it in a dict"""
-    parser = argparse.ArgumentParser(description="Grab contrail component logs ")
+    parser = argparse.ArgumentParser(description="Get contrail logs")
     parser.add_argument("config_file", help="Location of YAML file containing log file paths"
                                             " and strings to hide if using '-h' option")
     parser.add_argument("component", help="Name of component: control, analytics, analyticsdb, "
