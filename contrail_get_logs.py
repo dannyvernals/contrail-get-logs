@@ -60,7 +60,7 @@ def get_remote_file(remote_ip, file_location, username, destination):
     print("zipping '{}' up to /var/tmp/{} on {}".format(file_location, tarname, remote_ip))
     ssh_command = ['ssh', '{}@{}'.format(username, remote_ip),
                    'sudo tar -zcf /var/tmp/{} {}'.format(tarname, file_location)
-                  ]
+                   ]
     pipes = (subprocess.Popen(ssh_command, stderr=subprocess.PIPE))
     _, std_err = pipes.communicate(timeout=20)
     if pipes.returncode != 0:
@@ -68,7 +68,7 @@ def get_remote_file(remote_ip, file_location, username, destination):
     print("grabbing /var/tmp/{}".format(tarname))
     scp_command = ['scp', '{}@{}:{}'.format(username, remote_ip,
                                             '/var/tmp/{}'.format(tarname)), destination
-                  ]
+                   ]
     pipes = (subprocess.Popen(scp_command, stderr=subprocess.PIPE))
     _, std_err = pipes.communicate(timeout=20)
     if pipes.returncode != 0:
@@ -77,7 +77,6 @@ def get_remote_file(remote_ip, file_location, username, destination):
     with tarfile.open('{}/{}'.format(destination, tarname)) as tar:
         tar.extractall(destination)
     os.remove('{}/{}'.format(destination, tarname))
-
 
 
 def iterate_devices(devices, logs, username, hide_data):
@@ -127,7 +126,6 @@ def strip_strings(dirty_text, host_re, dom_re):
     clean_text = match_ip.sub(r'X.X.\2', clean_text)
     clean_text = match_mac.sub(r'X:X:X:\2', clean_text)
     return clean_text
-
 
 
 def remove_confidential(run_id, host_re, dom_re):
@@ -223,7 +221,7 @@ def main():
         remove_confidential(run_id,
                             config['filter_strings']['hostname_string'],
                             config['filter_strings']['domain_string']
-                           )
+                            )
     else:
         shutil.move('./tmp/' + run_id, run_id)
     final_zip(run_id, component)
