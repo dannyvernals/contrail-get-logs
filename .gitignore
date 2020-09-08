@@ -1,3 +1,3 @@
 tmp
 *.tgz
-flake8*
+flake8.*
