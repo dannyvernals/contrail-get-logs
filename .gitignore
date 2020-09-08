@@ -1,3 +1,4 @@
 tmp
 *.tgz
-flake8.*
+flake8-output.xml
+flake8-output.txt
