@@ -14,7 +14,7 @@ pipeline {
         }
         stage('Test') {
            steps {
-               sh 'flake8  --exit-zero --output-file flake8-output.txt'
+               sh 'flake8  --max-line-length 99 --exit-zero --output-file flake8-output.txt'
                sh 'flake8_junit flake8-output.txt flake8-output.xml'
           }
        }
