@@ -1,0 +1,5 @@
+argparse
+uuid
+pathlib
+flake8
+flake8_junit flake8-output.txt flake8-output.xml
