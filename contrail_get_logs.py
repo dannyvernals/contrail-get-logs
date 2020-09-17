@@ -6,7 +6,7 @@ Use at your own risk.
 """
 
 import argparse
-import uuid
+import datetime
 import re
 import os
 import pathlib
@@ -81,7 +81,7 @@ def get_remote_file(remote_ip, file_location, username, destination):
 
 def iterate_devices(devices, logs, username, hide_data):
     """Iterate over all devices of a specified type from IPs config file"""
-    run_id = str(uuid.uuid1())
+    run_id = datetime.datetime.now().strftime("%d-%m-%y_%H_%M_%S")
     for device in devices:
         if hide_data:
             dev_name = 'X.X.' + '.'.join(device.split('.')[2:4])
@@ -114,11 +114,11 @@ def write_log(file_contents, file_path):
         file_handle.write(file_contents)
 
 
-def strip_strings(dirty_text, host_re, dom_re):
+def strip_strings(dirty_text, hostname_regex, domain_regex):
     """clean confidential strings from log files"""
     dirty_text = dirty_text.decode('utf-8')
-    match_host = re.compile(host_re)
-    match_domain = re.compile(dom_re)
+    match_host = re.compile(hostname_regex)
+    match_domain = re.compile(domain_regex)
     match_ip = re.compile(r'(\d{1,3}\.\d{1,3}\.)(\d{1,3}\.\d{1,3})', re.VERBOSE)
     match_mac = re.compile(r'(\w{2}:\w{2}:\w{2}:)(\w{2}:\w{2}:\w{2})', re.VERBOSE)
     clean_text = match_host.sub('dummy_host', dirty_text)
@@ -128,7 +128,7 @@ def strip_strings(dirty_text, host_re, dom_re):
     return clean_text
 
 
-def remove_confidential(run_id, host_re, dom_re):
+def remove_confidential(run_id, hostname_regex, domain_regex):
     """iterate through all grabbed logs to remove confidential information"""
     working_dir = './tmp/' + run_id
     for root, _, files in os.walk(working_dir):
@@ -144,7 +144,7 @@ def remove_confidential(run_id, host_re, dom_re):
             else:
                 print("unsupported file: '{}' ignoring...".format(file_path))
                 continue
-            clean_text = strip_strings(dirty_text, host_re, dom_re)
+            clean_text = strip_strings(dirty_text, hostname_regex, domain_regex)
             file_path = '/'.join(file_path.split('/')[2:-1])
             pathlib.Path(file_path).mkdir(parents=True, exist_ok=True)
             write_log(clean_text, file_path + '/' + file_name)
@@ -204,8 +204,8 @@ def main():
     config = read_config(args['config_file'])
     component = CLI_MAP[args['component']]
     log_files = config['components'][component]['logs']
-    if not os.path.exists('./tmp'):
-        os.mkdir('./tmp')
+    shutil.rmtree('./tmp')
+    os.mkdir('./tmp')
     if args['device_ip'] and args['ips_file']:
         print("both device IP and IPs file specified.  Please only use one")
         exit()
