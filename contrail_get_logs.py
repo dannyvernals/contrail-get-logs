@@ -49,7 +49,7 @@ def cli_grab():
 def read_config(file_path):
     """read YAML configs"""
     with open(file_path) as file_handle:
-        file_contents = yaml.load(file_handle.read())
+        file_contents = yaml.safe_load(file_handle.read())
     return file_contents
 
 
@@ -59,11 +59,11 @@ def get_remote_file(remote_ip, file_location, username, destination):
     tarname = '_'.join(file_location.split('/')) + '.tgz'
     print("zipping '{}' up to /var/tmp/{} on {}".format(file_location, tarname, remote_ip))
     ssh_command = ['ssh', '{}@{}'.format(username, remote_ip),
-                   'sudo tar -zcf /var/tmp/{} {}'.format(tarname, file_location)
+                   'sudo tar --warning=no-file-changed -zcf /var/tmp/{} {}'.format(tarname, file_location)
                    ]
     pipes = (subprocess.Popen(ssh_command, stderr=subprocess.PIPE))
     _, std_err = pipes.communicate(timeout=20)
-    if pipes.returncode != 0:
+    if pipes.returncode > 1:
         raise Exception(std_err.strip())
     print("grabbing /var/tmp/{}".format(tarname))
     scp_command = ['scp', '{}@{}:{}'.format(username, remote_ip,
